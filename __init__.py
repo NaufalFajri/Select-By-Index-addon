@@ -92,9 +92,9 @@ class SelectByIndex(bpy.types.Operator):
             selectable_items = bm.faces
 
         start = self.start
-        stop = self.stop + 1
+        stop = self.stop
         for index, item in enumerate(selectable_items):
-            if index > start and index < stop:
+            if index >= start and index <= stop:
                 item.select = True
         
         bm.select_flush_mode()
