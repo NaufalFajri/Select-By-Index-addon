@@ -3,14 +3,16 @@ import bmesh
 
 class SelectByIndex(bpy.types.Operator):
     """Select all vertices, edges, or faces within an index range"""
-    bl_idname = "select.select_by_index"
+    bl_idname = "mesh.select_by_index"
     bl_label = "Select By Index"
     bl_options = {'REGISTER', 'UNDO'}
 
+    # Increment stop when user increments start above stop
     def update_start(self, context):
         if self.start > self.stop:
             self.stop = self.start
     
+    # Decrement start when user decrements stop below start
     def update_stop(self, context):
         if self.stop < self.start:
             self.start = self.stop
@@ -41,19 +43,30 @@ class SelectByIndex(bpy.types.Operator):
         update=update_stop
     )
 
-    def check(self, context):
-        obj = context.object
-        me = obj.data
-        bm = bmesh.from_edit_mesh(me)
+    replace_selection: bpy.props.BoolProperty(
+        name="Replace Selection",
+        description="Replace instead of adding to the previous selection",
+        default=True
+    )
 
-        max_index = 0
+    @classmethod
+    def poll(cls, context):
+        if context.object.mode == 'EDIT':
+            return True
+        cls.poll_message_set("The active object must be in Edit mode")
+        return False
+
+    def check(self, context):
+        bm = bmesh.from_edit_mesh(context.object.data)
 
         if self.select_mode == 'VERTEX':
-            max_index = len(bm.verts)-1
+            max_index = len(bm.verts) - 1
         elif self.select_mode == 'EDGE':
-            max_index = len(bm.edges)-1
+            max_index = len(bm.edges) - 1
         elif self.select_mode == 'FACE':
-            max_index = len(bm.faces)-1
+            max_index = len(bm.faces) - 1
+
+        bm.free()
 
         if self.start > max_index or self.stop > max_index:
             self.start = min(self.start, max_index)
@@ -62,41 +75,34 @@ class SelectByIndex(bpy.types.Operator):
         return False
 
     def execute(self, context):
-        obj = context.object
-        me = obj.data
+        if self.replace_selection:
+            bpy.ops.mesh.select_all(action='DESELECT')
+
+        me = context.object.data
         bm = bmesh.from_edit_mesh(me)
 
         if self.select_mode == 'VERTEX':
-            bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
-            for vert in bm.verts:
-                if vert.index >= self.start and vert.index <= self.stop:
-                    vert.select = True
-                else:
-                    vert.select = False
+            bpy.ops.mesh.select_mode(type='VERT')
+            selectable_items = bm.verts
         elif self.select_mode == 'EDGE':
-            bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='EDGE')
-            for edge in bm.edges:
-                if edge.index >= self.start and edge.index <= self.stop:
-                    edge.select = True
-                else:
-                    edge.select = False
+            bpy.ops.mesh.select_mode(type='EDGE')
+            selectable_items = bm.edges
         elif self.select_mode == 'FACE':
-            bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='FACE')
-            for face in bm.faces:
-                if face.index >= self.start and face.index <= self.stop:
-                    face.select = True
-                else:
-                    face.select = False
+            bpy.ops.mesh.select_mode(type='FACE')
+            selectable_items = bm.faces
 
+        start = self.start
+        stop = self.stop + 1
+        for index, item in enumerate(selectable_items):
+            if index > start and index < stop:
+                item.select = True
+        
         bm.select_flush_mode()
         bmesh.update_edit_mesh(me)
+        bm.free()
         return {'FINISHED'}
         
     def invoke(self, context, event):
-        obj = context.object
-        me = obj.data
-        bm = bmesh.from_edit_mesh(me)
-
         if context.tool_settings.mesh_select_mode[0]:  # Vertex mode
             self.select_mode = 'VERTEX'
         elif context.tool_settings.mesh_select_mode[1]:  # Edge mode

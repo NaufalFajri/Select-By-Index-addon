@@ -4,3 +4,4 @@ Select all vertices, edges, or faces within an index range.
 * In Edit Mode, Click on Select -> By Index
 * Modify the selection mode (vertex, edge, face)
 * Modify index selection range (inclusive)
+* Modify selection behavior (replace or add to prior selection)

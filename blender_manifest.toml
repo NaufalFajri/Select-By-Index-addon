@@ -1,18 +1,18 @@
 schema_version = "1.0.0"
 
 id = "select_by_index"
-version = "1.0.0"
+version = "1.1.0"
 name = "Select By Index"
 tagline = "Select all vertices, edges, or faces within an index range"
 maintainer = "Eric Banker <EricBanker12@gmail.com>"
 type = "add-on"
 
 # # Optional: link to documentation, support, source files, etc
-website = "https://gist.github.com/EricBanker12/6bf6b9dae8022e180b8c11f31ee73432"
+website = "https://github.com/EricBanker12/Select-By-Index"
 
 # # Optional: tag list defined by Blender and server, see:
 # # https://docs.blender.org/manual/en/dev/advanced/extensions/tags.html
-# tags = ["Animation", "Sequencer"]
+tags = ["Mesh"]
 
 blender_version_min = "4.2.0"
 # # Optional: Blender version that the extension does not support, earlier versions are supported.
