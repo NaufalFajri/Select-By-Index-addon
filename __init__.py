@@ -37,7 +37,7 @@ class SelectByIndex(bpy.types.Operator):
     
     stop: bpy.props.IntProperty(
         name="Selection Stop",
-        description="The ending index for the selection range (inclusive)",
+        description="The ending index for the selection range",
         default=0,
         min=0,
         update=update_stop
@@ -46,6 +46,12 @@ class SelectByIndex(bpy.types.Operator):
     replace_selection: bpy.props.BoolProperty(
         name="Replace Selection",
         description="Replace instead of adding to the previous selection",
+        default=True
+    )
+
+    inc_stop_index: bpy.props.BoolProperty(
+        name="Inclusive Stop Index",
+        description="Make the ending index for the selection range inclusive",
         default=True
     )
 
@@ -60,13 +66,16 @@ class SelectByIndex(bpy.types.Operator):
         bm = bmesh.from_edit_mesh(context.object.data)
 
         if self.select_mode == 'VERTEX':
-            max_index = len(bm.verts) - 1
+            max_index = len(bm.verts)
         elif self.select_mode == 'EDGE':
-            max_index = len(bm.edges) - 1
+            max_index = len(bm.edges)
         elif self.select_mode == 'FACE':
-            max_index = len(bm.faces) - 1
+            max_index = len(bm.faces)
 
         bm.free()
+
+        if self.inc_stop_index:
+            max_index = max(max_index - 1, 0)
 
         if self.start > max_index or self.stop > max_index:
             self.start = min(self.start, max_index)
@@ -94,12 +103,12 @@ class SelectByIndex(bpy.types.Operator):
         start = self.start
         stop = self.stop
         for index, item in enumerate(selectable_items):
-            if index >= start and index <= stop:
+            if index >= start and (index < stop or self.inc_stop_index and index == stop):
                 item.select = True
         
         bm.select_flush_mode()
-        bmesh.update_edit_mesh(me)
         bm.free()
+        bmesh.update_edit_mesh(me)
         return {'FINISHED'}
         
     def invoke(self, context, event):
@@ -122,8 +131,8 @@ def register():
     bpy.types.VIEW3D_MT_select_edit_mesh.append(menu_func)
 
 def unregister():
-    bpy.utils.unregister_class(SelectByIndex)
     bpy.types.VIEW3D_MT_select_edit_mesh.remove(menu_func)
+    bpy.utils.unregister_class(SelectByIndex)
 
 
 # This allows you to run the script directly from Blender's Text editor
