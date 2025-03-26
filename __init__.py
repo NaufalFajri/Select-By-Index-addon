@@ -9,13 +9,19 @@ class SelectByIndex(bpy.types.Operator):
 
     # Increment stop when user increments start above stop
     def update_start(self, context):
-        if self.start > self.stop:
-            self.stop = self.start
+        min_stop = self.start if self.inc_stop_index else self.start + 1
+        if self.stop < min_stop:
+            self.stop = min_stop
     
     # Decrement start when user decrements stop below start
     def update_stop(self, context):
-        if self.stop < self.start:
-            self.start = self.stop
+        max_start = self.stop if self.inc_stop_index else max(self.stop - 1, 0)
+        if self.start > max_start:
+            self.start = max_start
+
+    # Increment or Decrement stop index when changing selection range inclusivity
+    def update_inc_stop_index(self, context):
+        self.stop = max(self.stop - 1, 0) if self.inc_stop_index else self.stop + 1
 
     select_mode: bpy.props.EnumProperty(
         name="Selection Mode",
@@ -52,7 +58,8 @@ class SelectByIndex(bpy.types.Operator):
     inc_stop_index: bpy.props.BoolProperty(
         name="Inclusive Stop Index",
         description="Make the ending index for the selection range inclusive",
-        default=True
+        default=True,
+        update=update_inc_stop_index
     )
 
     @classmethod
@@ -66,21 +73,28 @@ class SelectByIndex(bpy.types.Operator):
         bm = bmesh.from_edit_mesh(context.object.data)
 
         if self.select_mode == 'VERTEX':
-            max_index = len(bm.verts)
+            max_stop = len(bm.verts)
         elif self.select_mode == 'EDGE':
-            max_index = len(bm.edges)
+            max_stop = len(bm.edges)
         elif self.select_mode == 'FACE':
-            max_index = len(bm.faces)
+            max_stop = len(bm.faces)
 
         bm.free()
 
+        max_start = max(max_stop - 1, 0)
+        
         if self.inc_stop_index:
-            max_index = max(max_index - 1, 0)
+            max_stop = max_start
 
-        if self.start > max_index or self.stop > max_index:
-            self.start = min(self.start, max_index)
-            self.stop = min(self.stop, max_index)
+        if self.start > max_start or self.stop > max_stop:
+            self.start = min(self.start, max_start)
+            self.stop = min(self.stop, max_stop)
             return True
+        
+        if not self.inc_stop_index and max_stop > 0 and self.stop < 1:
+            self.stop = 1
+            return True
+
         return False
 
     def execute(self, context):
@@ -101,9 +115,10 @@ class SelectByIndex(bpy.types.Operator):
             selectable_items = bm.faces
 
         start = self.start
-        stop = self.stop
+        stop = self.stop + 1 if self.inc_stop_index else self.stop
+        
         for index, item in enumerate(selectable_items):
-            if index >= start and (index < stop or self.inc_stop_index and index == stop):
+            if index >= start and index < stop:
                 item.select = True
         
         bm.select_flush_mode()
