@@ -1,40 +1,49 @@
-from itertools import islice
+bl_info = {
+    "name": "Select By Index (Range)",
+    "author": "Adapted from EricBanker12",
+    "version": (1, 0, 0),
+    "blender": (3, 6, 0),
+    "location": "View3D > Select > By Index",
+    "description": "Select vertices / edges / faces by specifying start and end (or count)",
+    "warning": "",
+    "wiki_url": "",
+    "category": "Mesh",
+}
+
 import bpy
 import bmesh
+from itertools import islice
 
 class SelectByIndex(bpy.types.Operator):
     """Select all vertices, edges, or faces within an index range"""
     bl_idname = "mesh.select_by_index"
     bl_label = "Select By Index"
     bl_options = {'REGISTER', 'UNDO'}
-
+    
     select_mode: bpy.props.EnumProperty(
         name="Select Mode",
         description="Choose a selection mode",
         items=[
             ('VERTEX', "Vertex", "Select vertices"),
-            ('EDGE', "Edge", "Select edges"),
-            ('FACE', "Face", "Select faces"),
-        ]
+            ('EDGE',   "Edge",   "Select edges"),
+            ('FACE',   "Face",   "Select faces"),
+        ],
     )
-
     input_mode: bpy.props.EnumProperty(
         name="Input Mode",
         description="Choose the selection range inputs",
         items=[
             ('INCLUSIVE', "Inclusive", "Input start index and inclusive stop index"),
             ('EXCLUSIVE', "Exclusive", "Input start index and exclusive stop index"),
-            ('COUNT', "Count", "Input start index and selection count"),
-        ]
+            ('COUNT',     "Count",     "Input start index and selection count"),
+        ],
     )
-    
     count: bpy.props.IntProperty(
         name="Count",
         description="The count of items for the selection range",
         default=1,
-        min=1
+        min=1,
     )
-
     private_start: bpy.props.IntProperty(default=0, min=0)
 
     def update_start(self, context):
@@ -47,7 +56,7 @@ class SelectByIndex(bpy.types.Operator):
         description="The starting index for the selection range",
         default=0,
         min=0,
-        update=update_start
+        update=update_start,
     )
 
     def get_inc_stop(self):
@@ -71,116 +80,126 @@ class SelectByIndex(bpy.types.Operator):
             self.count = 1
         else:
             self.count = value - self.start
-    
+
     inc_stop: bpy.props.IntProperty(
         name="Stop",
         description="The inclusive ending index for the selection range",
         default=0,
         min=0,
         get=get_inc_stop,
-        set=set_inc_stop
+        set=set_inc_stop,
     )
-    
     exc_stop: bpy.props.IntProperty(
         name="Stop",
         description="The exclusive ending index for the selection range",
         default=1,
         min=1,
         get=get_exc_stop,
-        set=set_exc_stop
+        set=set_exc_stop,
     )
-
     replace_selection: bpy.props.BoolProperty(
         name="Replace Selection",
         description="Replace instead of adding to the previous selection",
-        default=True
+        default=True,
     )
 
     @classmethod
     def poll(cls, context):
-        if context.object.mode == 'EDIT':
+        obj = context.object
+        if obj and obj.type == 'MESH' and obj.mode == 'EDIT':
             return True
-        cls.poll_message_set("The active object must be in Edit mode")
         return False
 
     def draw(self, context):
         layout = self.layout
-
         layout.use_property_split = True
         layout.use_property_decorate = False
 
         layout.prop(self, "select_mode")
         layout.prop(self, "input_mode")
         layout.prop(self, "start")
-        
+
         if self.input_mode == 'INCLUSIVE':
             layout.prop(self, "inc_stop")
         elif self.input_mode == 'EXCLUSIVE':
             layout.prop(self, "exc_stop")
         elif self.input_mode == 'COUNT':
             layout.prop(self, "count")
-        
+
         layout.prop(self, "replace_selection")
 
     def check(self, context):
-        bm = bmesh.from_edit_mesh(context.object.data)
-
+        obj = context.object
+        me = obj.data
+        bm = bmesh.from_edit_mesh(me)
         if self.select_mode == 'VERTEX':
             max_len = len(bm.verts)
         elif self.select_mode == 'EDGE':
             max_len = len(bm.edges)
-        elif self.select_mode == 'FACE':
+        else:
             max_len = len(bm.faces)
-
         bm.free()
 
-        max_start = max(max_len - 1, 0)
-        start = self.start
-        stop = self.inc_stop
+        if max_len < 1:
+            return False
 
-        if start > max_start or stop > max_start:
-            self.start = min(start, max_start)
-            self.inc_stop = min(stop, max_start)
-            return True
-
-        return False
+        max_index = max_len - 1
+        # Adjust start & stop if out of bounds
+        if self.start > max_index:
+            self.start = max_index
+        stop = self.inc_stop if self.input_mode == 'INCLUSIVE' else self.exc_stop
+        if stop > max_len:
+            # For exclusive, stop can be equal to max_len; for inclusive it should be <= max_index
+            if self.input_mode == 'EXCLUSIVE':
+                stop = max_len
+            else:
+                stop = max_index
+            # Push back into properties
+            if self.input_mode == 'INCLUSIVE':
+                self.inc_stop = stop
+            else:
+                self.exc_stop = stop
+        return True
 
     def execute(self, context):
         if self.replace_selection:
             bpy.ops.mesh.select_all(action='DESELECT')
 
-        me = context.object.data
+        obj = context.object
+        me = obj.data
         bm = bmesh.from_edit_mesh(me)
 
+        # Ensure proper mode
         if self.select_mode == 'VERTEX':
             bpy.ops.mesh.select_mode(type='VERT')
-            selectable_items = bm.verts
+            seq = bm.verts
         elif self.select_mode == 'EDGE':
             bpy.ops.mesh.select_mode(type='EDGE')
-            selectable_items = bm.edges
-        elif self.select_mode == 'FACE':
+            seq = bm.edges
+        else:
             bpy.ops.mesh.select_mode(type='FACE')
-            selectable_items = bm.faces
+            seq = bm.faces
 
-        for item in islice(selectable_items, self.start, self.exc_stop):
+        # Use islice to pick the items in range
+        start = self.start
+        stop = self.exc_stop  # exc_stop yields start+count naturally
+        for item in islice(seq, start, stop):
             item.select = True
-        
+
         bm.select_flush_mode()
-        bm.free()
-        bmesh.update_edit_mesh(me)
-
+        bmesh.update_edit_mesh(me, loop_triangles=False, destructive=False)
         return {'FINISHED'}
-        
-    def invoke(self, context, event):
-        if context.tool_settings.mesh_select_mode[0]:  # Vertex mode
-            self.select_mode = 'VERTEX'
-        elif context.tool_settings.mesh_select_mode[1]:  # Edge mode
-            self.select_mode = 'EDGE'
-        elif context.tool_settings.mesh_select_mode[2]:  # Face mode
-            self.select_mode = 'FACE'
 
+    def invoke(self, context, event):
+        # Determine default select mode based on current mesh select mode
+        sm = context.tool_settings.mesh_select_mode
+        if sm[0]:
+            self.select_mode = 'VERTEX'
+        elif sm[1]:
+            self.select_mode = 'EDGE'
+        elif sm[2]:
+            self.select_mode = 'FACE'
         self.check(context)
-        
         return self.execute(context)
 
 def menu_func(self, context):
@@ -194,8 +213,5 @@ def unregister():
     bpy.types.VIEW3D_MT_select_edit_mesh.remove(menu_func)
     bpy.utils.unregister_class(SelectByIndex)
 
-
-# This allows you to run the script directly from Blender's Text editor
-# to test the add-on without having to install it.
 if __name__ == "__main__":
     register()
